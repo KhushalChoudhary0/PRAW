@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stealth OSINT Dashboard</title>
-    <!-- Tailwind CSS Play CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -21,21 +20,48 @@
         }
     </script>
     <style>
-        /* Smooth fade-in animation */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            to   { opacity: 1; transform: translateY(0); }
         }
-        .animate-fade-in {
-            animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulseBar {
+            0%, 100% { opacity: 0.4; }
+            50%      { opacity: 1; }
+        }
+        .animate-fade-in  { animation: fadeIn  0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .animate-slide-down { animation: slideDown 0.4s ease-out forwards; }
+
+        /* Skeleton shimmer for loading state */
+        .skeleton {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 0.5rem;
+        }
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Timeline connector line */
+        .timeline-line {
+            position: absolute;
+            left: 1.125rem; /* center of the 2.25rem (w-9) dot */
+            top: 2.25rem;
+            bottom: 0;
+            width: 2px;
         }
     </style>
 </head>
-<body class="bg-darkBg text-slate-100 min-h-screen flex flex-col justify-between font-sans">
+<body class="bg-darkBg text-slate-100 min-h-screen flex flex-col font-sans">
 
-    <!-- Header / Navbar -->
+    <!-- ═══════════════════ HEADER ═══════════════════ -->
     <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div class="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-3">
                 <div class="bg-gradient-to-tr from-redditBrand to-orange-400 p-2 rounded-lg text-white font-black tracking-wider text-sm shadow-lg shadow-orange-500/10">
                     S.O.L
@@ -44,7 +70,10 @@
             </div>
             {% if username %}
             <div class="flex items-center space-x-4">
-                <span class="text-sm text-slate-400">Logged in as: <strong class="text-slate-200">{{ username }}</strong></span>
+                {% if mock_mode %}
+                <span class="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full px-2 py-0.5 font-semibold uppercase tracking-wider">Sandbox</span>
+                {% endif %}
+                <span class="text-sm text-slate-400">u/<strong class="text-slate-200">{{ username }}</strong></span>
                 <a href="/logout" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-1.5 px-3 rounded-md transition-all duration-200 border border-slate-700/50 hover:border-slate-600">
                     Logout
                 </a>
@@ -53,13 +82,12 @@
         </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-grow flex items-center justify-center px-4 py-12">
-        <div class="w-full max-w-xl animate-fade-in">
-            
+    <!-- ═══════════════════ MAIN ═══════════════════ -->
+    <main class="flex-grow px-4 py-10">
+        <div class="max-w-5xl mx-auto animate-fade-in">
+
             {% if error %}
-            <!-- Error Alert -->
-            <div class="mb-6 p-4 bg-red-900/30 border border-red-500/40 text-red-200 rounded-xl flex items-start space-x-3 text-sm">
+            <div class="mb-6 p-4 bg-red-900/30 border border-red-500/40 text-red-200 rounded-xl flex items-start space-x-3 text-sm max-w-2xl mx-auto">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
@@ -67,84 +95,110 @@
             </div>
             {% endif %}
 
-            {% if mock_mode %}
-            <!-- Mock Mode Notice -->
-            <div class="mb-6 p-4 bg-amber-900/20 border border-amber-500/30 text-amber-200 rounded-xl flex items-start space-x-3 text-xs">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                    <span class="font-bold">💡 Running in Developer Mock Mode:</span>
-                    <p class="mt-0.5 text-amber-300/80">No active Reddit API credentials detected. Click the login button to test the complete session cookie and state authentication flow locally.</p>
-                </div>
-            </div>
-            {% endif %}
-
             {% if username %}
-            <!-- Dashboard (Authenticated User) -->
-            <div class="bg-cardBg border border-slate-800 rounded-2xl shadow-2xl p-8 relative overflow-hidden">
-                <!-- Decorative subtle color accent -->
+            <!-- ════════════════ AUTHENTICATED DASHBOARD ════════════════ -->
+
+            <!-- Welcome bar -->
+            <div class="mb-8 text-center">
+                <span class="text-xs font-semibold tracking-wider text-redditBrand uppercase">Active Session</span>
+                <h1 class="text-3xl font-extrabold tracking-tight text-white mt-1">Welcome, u/{{ username }}!</h1>
+                {% if mock_mode %}
+                <p class="text-xs text-amber-400/80 mt-1">🧪 Sandbox Mode — all data below is simulated for testing.</p>
+                {% else %}
+                <p class="text-sm text-slate-400 mt-1">Secure connection active. Ready for public data harvesting.</p>
+                {% endif %}
+            </div>
+
+            <!-- ─── INPUT AREA ─── -->
+            <div class="bg-cardBg border border-slate-800 rounded-2xl shadow-2xl p-6 mb-8 relative overflow-hidden max-w-2xl mx-auto">
                 <div class="absolute -top-24 -right-24 w-48 h-48 bg-gradient-to-tr from-redditBrand to-orange-500 rounded-full blur-3xl opacity-10 pointer-events-none"></div>
+                <div class="flex items-center space-x-3 mb-4">
+                    <span class="flex h-3 w-3 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    <span class="text-xs font-semibold text-emerald-400 uppercase tracking-widest">Ready for Input</span>
+                </div>
+                <div class="flex space-x-3">
+                    <input
+                        id="queryInput"
+                        type="text"
+                        placeholder="Describe your service or product idea…"
+                        class="flex-1 bg-slate-900/60 border border-slate-700/60 text-sm text-slate-100 placeholder-slate-500 rounded-xl px-4 py-3 focus:outline-none focus:border-redditBrand/60 focus:ring-1 focus:ring-redditBrand/30 transition-all"
+                    />
+                    <button
+                        id="analyzeBtn"
+                        onclick="runAnalysis()"
+                        class="bg-gradient-to-r from-redditBrand to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white font-bold text-sm px-6 py-3 rounded-xl transition duration-200 transform active:scale-[0.97] shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Analyze
+                    </button>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-2.5">Try: <button onclick="fillExample('I make websites for weddings')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">I make websites for weddings</button> · <button onclick="fillExample('Foot massager for older women')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">Foot massager for older women</button></p>
+            </div>
 
-                <div class="space-y-6">
-                    <div>
-                        <span class="text-xs font-semibold tracking-wider text-redditBrand uppercase">Active Session</span>
-                        <h1 class="text-3xl font-extrabold tracking-tight text-white mt-1">Welcome, u/{{ username }}!</h1>
-                        {% if username == "StealthDeveloper_Mock" %}
-                        <p class="text-xs text-amber-400/90 font-medium mt-1">⚠️ Connected in Mock Mode. Session cookie verification active.</p>
-                        {% else %}
-                        <p class="text-sm text-slate-400 mt-2">Your secure connection with Reddit is active and authorized for public data harvesting.</p>
-                        {% endif %}
+            <!-- ─── LOADING STATE ─── -->
+            <div id="loadingState" class="hidden max-w-2xl mx-auto mb-8">
+                <div class="bg-cardBg border border-slate-800 rounded-2xl p-6 space-y-4">
+                    <div class="flex items-center space-x-3">
+                        <svg class="animate-spin h-5 w-5 text-redditBrand" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span class="text-sm text-slate-300 font-medium">Scanning Reddit threads…</span>
                     </div>
-
-                    <hr class="border-slate-800">
-
-                    <!-- OSINT Inputs Placeholder Container -->
-                    <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-6 space-y-4">
-                        <div class="flex items-center space-x-3">
-                            <span class="flex h-3 w-3 relative">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                            </span>
-                            <span class="text-xs font-semibold text-emerald-400 uppercase tracking-widest">Ready for Input</span>
-                        </div>
-                        <div class="text-center py-8 px-4 border border-dashed border-slate-800 rounded-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-slate-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                            </svg>
-                            <h3 class="text-slate-300 font-medium">What are you looking to scrape?</h3>
-                            <p class="text-xs text-slate-500 max-w-xs mx-auto mt-1">Lead generation, sentiment tracking, or niche keyword intelligence features will go here in the next step.</p>
-                        </div>
+                    <div class="space-y-3">
+                        <div class="skeleton h-4 w-full"></div>
+                        <div class="skeleton h-4 w-5/6"></div>
+                        <div class="skeleton h-4 w-4/6"></div>
+                        <div class="skeleton h-16 w-full mt-2"></div>
+                        <div class="skeleton h-16 w-full"></div>
                     </div>
                 </div>
             </div>
+
+            <!-- ─── RESULTS CONTAINER ─── -->
+            <div id="resultsContainer" class="hidden"></div>
+
             {% else %}
-            <!-- Landing Page (Unauthenticated User) -->
-            <div class="bg-cardBg border border-slate-800 rounded-2xl shadow-2xl p-8 relative overflow-hidden text-center">
-                <!-- Background ambient gradient -->
-                <div class="absolute -top-32 -left-32 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                <div class="absolute -bottom-32 -right-32 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-                <div class="space-y-6">
-                    <div class="space-y-3">
-                        <div class="inline-flex items-center bg-slate-900 border border-slate-800 rounded-full px-3 py-1 text-xs text-slate-400 space-x-1.5 mx-auto">
-                            <span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
-                            <span>Stealth OSINT Engine v0.1</span>
+            <!-- ════════════════ LANDING PAGE ════════════════ -->
+            <div class="flex items-center justify-center" style="min-height:60vh;">
+                <div class="w-full max-w-xl">
+                    {% if mock_mode %}
+                    <div class="mb-6 p-4 bg-amber-900/20 border border-amber-500/30 text-amber-200 rounded-xl flex items-start space-x-3 text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <span class="font-bold">🧪 Sandbox Mode Active</span>
+                            <p class="mt-0.5 text-amber-300/80">No Reddit API keys needed. Click below to enter the sandbox dashboard instantly.</p>
                         </div>
-                        <h1 class="text-4xl font-extrabold tracking-tight text-white">Stealth Lead Intelligence</h1>
-                        <p class="text-slate-400 max-w-sm mx-auto text-sm">
-                            Harness Reddit data threads for ultra-fast, zero-overhead OSINT research and highly targeted organic lead extraction.
-                        </p>
                     </div>
+                    {% endif %}
 
-                    <div class="pt-4">
-                        <a href="/login" class="inline-flex items-center justify-center space-x-3 w-full bg-gradient-to-r from-redditBrand to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white font-bold py-3.5 px-6 rounded-xl transition duration-200 transform active:scale-[0.98] shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 group">
-                            <!-- Reddit SVG Icon -->
-                            <svg class="h-5 w-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M24 11.5c0-1.65-1.35-3-3-3-.96 0-1.86.48-2.42 1.24-1.64-1-3.75-1.64-5.99-1.72l1.2-3.8 3.9.84c.06.94.84 1.7 1.81 1.7 1.1 0 2-.9 2-2s-.9-2-2-2c-.93 0-1.7.63-1.92 1.5l-4.32-.93c-.11-.02-.23.04-.27.14l-1.42 4.5c-2.3.06-4.48.7-6.17 1.73-.55-.73-1.42-1.2-2.38-1.2-1.65 0-3 1.35-3 3 0 1.13.62 2.1 1.54 2.6-.04.2-.06.4-.06.6 0 3.86 4.48 7 10 7s10-3.14 10-7c0-.2-.02-.4-.06-.6.92-.5 1.54-1.47 1.54-2.6zm-18 1c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5zm11 4.5c-1.78 1.78-5.17 1.78-6.95 0-.11-.11-.11-.28 0-.39.11-.11.28-.11.39 0 1.56 1.56 4.6 1.56 6.16 0 .11-.11.28-.11.39 0 .11.11.11.28 0 .39zm-1-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-                            </svg>
-                            <span>Connect via Reddit</span>
-                        </a>
+                    <div class="bg-cardBg border border-slate-800 rounded-2xl shadow-2xl p-8 relative overflow-hidden text-center">
+                        <div class="absolute -top-32 -left-32 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="absolute -bottom-32 -right-32 w-64 h-64 bg-orange-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="space-y-6">
+                            <div class="space-y-3">
+                                <div class="inline-flex items-center bg-slate-900 border border-slate-800 rounded-full px-3 py-1 text-xs text-slate-400 space-x-1.5 mx-auto">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                                    <span>Stealth OSINT Engine v0.2</span>
+                                </div>
+                                <h1 class="text-4xl font-extrabold tracking-tight text-white">Stealth Lead Intelligence</h1>
+                                <p class="text-slate-400 max-w-sm mx-auto text-sm">
+                                    Harness Reddit data threads for ultra-fast, zero-overhead OSINT research and highly targeted organic lead extraction.
+                                </p>
+                            </div>
+                            <div class="pt-4">
+                                <a href="/login" class="inline-flex items-center justify-center space-x-3 w-full bg-gradient-to-r from-redditBrand to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white font-bold py-3.5 px-6 rounded-xl transition duration-200 transform active:scale-[0.98] shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30">
+                                    <svg class="h-5 w-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M24 11.5c0-1.65-1.35-3-3-3-.96 0-1.86.48-2.42 1.24-1.64-1-3.75-1.64-5.99-1.72l1.2-3.8 3.9.84c.06.94.84 1.7 1.81 1.7 1.1 0 2-.9 2-2s-.9-2-2-2c-.93 0-1.7.63-1.92 1.5l-4.32-.93c-.11-.02-.23.04-.27.14l-1.42 4.5c-2.3.06-4.48.7-6.17 1.73-.55-.73-1.42-1.2-2.38-1.2-1.65 0-3 1.35-3 3 0 1.13.62 2.1 1.54 2.6-.04.2-.06.4-.06.6 0 3.86 4.48 7 10 7s10-3.14 10-7c0-.2-.02-.4-.06-.6.92-.5 1.54-1.47 1.54-2.6zm-18 1c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5-1.5-.67-1.5-1.5zm11 4.5c-1.78 1.78-5.17 1.78-6.95 0-.11-.11-.11-.28 0-.39.11-.11.28-.11.39 0 1.56 1.56 4.6 1.56 6.16 0 .11-.11.28-.11.39 0 .11.11.11.28 0 .39zm-1-3c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                                    </svg>
+                                    <span>Connect via Reddit</span>
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -153,12 +207,205 @@
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="border-t border-slate-900 py-6 bg-slate-950/20 text-center">
+    <!-- ═══════════════════ FOOTER ═══════════════════ -->
+    <footer class="border-t border-slate-900 py-6 bg-slate-950/20 text-center mt-auto">
         <p class="text-xs text-slate-600">
-            &copy; 2026 Stealth OSINT Lead-Gen. Micro-overhead execution layer. Zero tracking, secure state-in-cookie flow.
+            &copy; 2026 Stealth OSINT Lead-Gen &middot; Zero tracking, secure state-in-cookie flow.
         </p>
     </footer>
+
+    <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+    <script>
+    function fillExample(text) {
+        document.getElementById('queryInput').value = text;
+        document.getElementById('queryInput').focus();
+    }
+
+    async function runAnalysis() {
+        const input = document.getElementById('queryInput');
+        const btn   = document.getElementById('analyzeBtn');
+        const query = input.value.trim();
+        if (!query) { input.focus(); return; }
+
+        // Show loading, hide previous results
+        btn.disabled = true;
+        btn.textContent = 'Scanning…';
+        document.getElementById('loadingState').classList.remove('hidden');
+        document.getElementById('resultsContainer').classList.add('hidden');
+        document.getElementById('resultsContainer').innerHTML = '';
+
+        try {
+            const res = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Analysis failed');
+            }
+
+            const json = await res.json();
+            document.getElementById('loadingState').classList.add('hidden');
+
+            if (json.type === 'leads') {
+                renderLeads(json);
+            } else {
+                renderTimeline(json);
+            }
+
+            document.getElementById('resultsContainer').classList.remove('hidden');
+        } catch (e) {
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('resultsContainer').innerHTML = `
+                <div class="max-w-2xl mx-auto p-4 bg-red-900/30 border border-red-500/40 text-red-200 rounded-xl text-sm">
+                    ⚠️ ${e.message}
+                </div>`;
+            document.getElementById('resultsContainer').classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Analyze';
+        }
+    }
+
+    /* ────────── LEAD FEED RENDERER ────────── */
+    function renderLeads(json) {
+        const leads = json.data;
+        let cards = '';
+        leads.forEach((l, i) => {
+            cards += `
+            <div class="animate-slide-down bg-slate-900/50 border border-slate-800/70 rounded-xl p-5 hover:border-slate-700 transition-all duration-200 group" style="animation-delay:${i * 60}ms">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center space-x-2 mb-1.5">
+                            <span class="text-[11px] font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-full px-2 py-0.5">${l.subreddit}</span>
+                            <span class="text-[11px] text-slate-500">${l.relative_time}</span>
+                            <span class="text-[11px] text-slate-600">${l.author}</span>
+                        </div>
+                        <p class="text-sm text-slate-200 leading-relaxed">${l.snippet}</p>
+                    </div>
+                    <a href="${l.url}" target="_blank" rel="noopener noreferrer"
+                       class="shrink-0 text-xs bg-redditBrand/10 text-redditBrand hover:bg-redditBrand hover:text-white border border-redditBrand/20 font-semibold py-2 px-3.5 rounded-lg transition-all duration-200 whitespace-nowrap">
+                        Open Post ↗
+                    </a>
+                </div>
+            </div>`;
+        });
+
+        document.getElementById('resultsContainer').innerHTML = `
+        <div class="max-w-2xl mx-auto space-y-4">
+            <!-- Tab header -->
+            <div class="flex items-center space-x-3 mb-2">
+                <div class="h-px flex-1 bg-slate-800"></div>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Live Lead Feed — Past 30 Days</span>
+                <div class="h-px flex-1 bg-slate-800"></div>
+            </div>
+            <p class="text-xs text-slate-500 text-center mb-4">Showing <strong class="text-slate-300">${leads.length}</strong> leads for "<em class="text-slate-300">${json.query}</em>", newest first.</p>
+            <div class="space-y-3">
+                ${cards}
+            </div>
+        </div>`;
+    }
+
+    /* ────────── TIMELINE RENDERER ────────── */
+    function renderTimeline(json) {
+        const data = json.data;
+        const years = data.years;
+        const threads = data.historical_threads;
+
+        const colorMap = {
+            emerald: { dot: 'bg-emerald-500', ring: 'ring-emerald-500/30', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', line: 'from-emerald-500/40', metric: 'text-emerald-400' },
+            sky:     { dot: 'bg-sky-500',     ring: 'ring-sky-500/30',     badge: 'bg-sky-500/10 text-sky-400 border-sky-500/20',         line: 'from-sky-500/40',     metric: 'text-sky-400' },
+            violet:  { dot: 'bg-violet-500',  ring: 'ring-violet-500/30',  badge: 'bg-violet-500/10 text-violet-400 border-violet-500/20', line: 'from-violet-500/40',  metric: 'text-violet-400' },
+            slate:   { dot: 'bg-slate-500',   ring: 'ring-slate-500/30',   badge: 'bg-slate-500/10 text-slate-400 border-slate-500/20',   line: 'from-slate-500/40',   metric: 'text-slate-400' },
+        };
+
+        let timelineHTML = '';
+        years.forEach((yr, i) => {
+            const c = colorMap[yr.color] || colorMap.slate;
+            const isLast = i === years.length - 1;
+
+            let metricsHTML = '';
+            yr.metrics.forEach(m => {
+                metricsHTML += `
+                <div class="flex items-baseline justify-between py-1.5 border-b border-slate-800/50 last:border-0">
+                    <span class="text-xs text-slate-400">${m.label}</span>
+                    <span class="text-sm font-bold ${c.metric} tabular-nums">${m.value}</span>
+                </div>`;
+            });
+
+            timelineHTML += `
+            <div class="relative pl-12 pb-8 animate-slide-down" style="animation-delay:${i * 120}ms">
+                <!-- Connector line -->
+                ${!isLast ? `<div class="timeline-line bg-gradient-to-b ${c.line} to-transparent"></div>` : ''}
+                <!-- Year dot -->
+                <div class="absolute left-0 top-0 w-9 h-9 rounded-full ${c.dot} ring-4 ${c.ring} flex items-center justify-center">
+                    <span class="text-[10px] font-black text-white">${typeof yr.year === 'number' ? String(yr.year).slice(-2) : '⟵'}</span>
+                </div>
+                <!-- Year card -->
+                <div class="bg-cardBg border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all duration-200">
+                    <div class="flex items-center space-x-2 mb-3">
+                        <span class="text-xs font-bold border rounded-full px-2.5 py-0.5 ${c.badge}">${yr.year}</span>
+                        <span class="text-xs text-slate-500">${yr.label}</span>
+                    </div>
+                    <div class="mb-3">
+                        ${metricsHTML}
+                    </div>
+                    <p class="text-xs text-slate-400 leading-relaxed">${yr.summary}</p>
+                </div>
+            </div>`;
+        });
+
+        // Historical threads
+        let threadsHTML = '';
+        threads.forEach(t => {
+            threadsHTML += `
+            <a href="${t.url}" target="_blank" rel="noopener noreferrer"
+               class="flex items-center justify-between p-3 bg-slate-900/40 border border-slate-800/60 rounded-lg hover:border-slate-700 transition-all group">
+                <div class="flex items-center space-x-3 min-w-0">
+                    <span class="text-[10px] font-bold bg-slate-800 text-slate-400 rounded px-1.5 py-0.5 shrink-0">${t.year}</span>
+                    <span class="text-xs text-slate-300 truncate">${t.title}</span>
+                </div>
+                <span class="text-[11px] text-slate-500 group-hover:text-redditBrand transition shrink-0 ml-3">${t.subreddit} ↗</span>
+            </a>`;
+        });
+
+        document.getElementById('resultsContainer').innerHTML = `
+        <div class="max-w-2xl mx-auto space-y-6">
+            <!-- Tab header -->
+            <div class="flex items-center space-x-3 mb-2">
+                <div class="h-px flex-1 bg-slate-800"></div>
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Market Trend Timeline</span>
+                <div class="h-px flex-1 bg-slate-800"></div>
+            </div>
+            <p class="text-xs text-slate-500 text-center">Multi-year archive analysis for "<em class="text-slate-300">${json.query}</em>"</p>
+
+            <!-- Timeline -->
+            <div class="relative mt-4">
+                ${timelineHTML}
+            </div>
+
+            <!-- Historical threads -->
+            <div class="mt-6">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">📎 Historical Threads for Manual Inspection</h3>
+                <div class="space-y-2">
+                    ${threadsHTML}
+                </div>
+            </div>
+        </div>`;
+    }
+
+    /* Allow Enter key to trigger analysis */
+    document.addEventListener('DOMContentLoaded', () => {
+        const input = document.getElementById('queryInput');
+        if (input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') runAnalysis();
+            });
+        }
+    });
+    </script>
 
 </body>
 </html>
