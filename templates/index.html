@@ -107,7 +107,27 @@
                         Analyze
                     </button>
                 </div>
-                <p class="text-[11px] text-slate-500 mt-2.5">Try: <button onclick="fillExample('I make websites for weddings')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">I make websites for weddings</button> · <button onclick="fillExample('Foot massager for older women')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">Foot massager for older women</button></p>
+                
+                <div class="mt-5 border border-slate-700/50 rounded-xl p-1 bg-slate-900/40 flex flex-wrap text-[11px] sm:text-xs">
+                    <label class="cursor-pointer flex-1 text-center">
+                        <input type="radio" name="intent_mode" value="job_search" class="peer sr-only" />
+                        <div class="px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Find Jobs</div>
+                    </label>
+                    <label class="cursor-pointer flex-1 text-center">
+                        <input type="radio" name="intent_mode" value="hiring_leads" class="peer sr-only" />
+                        <div class="px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Hire Talent</div>
+                    </label>
+                    <label class="cursor-pointer flex-1 text-center">
+                        <input type="radio" name="intent_mode" value="lead_generation" class="peer sr-only" checked />
+                        <div class="px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Sell Product/Service</div>
+                    </label>
+                    <label class="cursor-pointer flex-1 text-center">
+                        <input type="radio" name="intent_mode" value="product_discovery" class="peer sr-only" />
+                        <div class="px-3 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Discover Products</div>
+                    </label>
+                </div>
+                
+                <p class="text-[11px] text-slate-500 mt-4 text-center">Try: <button onclick="fillExample('I make websites for weddings')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">I make websites for weddings</button> · <button onclick="fillExample('Foot massager for older women')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">Foot massager for older women</button></p>
             </div>
 
             <!-- ─── LOADING STATE ─── -->
@@ -154,7 +174,12 @@
         const input = document.getElementById('queryInput');
         const btn   = document.getElementById('analyzeBtn');
         const query = input.value.trim();
+        
+        const intentModeEl = document.querySelector('input[name="intent_mode"]:checked');
+        const intent_mode = intentModeEl ? intentModeEl.value : null;
+
         if (!query) { input.focus(); return; }
+        if (!intent_mode) { alert("Please select a target intent."); return; }
 
         // Show loading, hide previous results
         btn.disabled = true;
@@ -167,7 +192,7 @@
             const res = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query }),
+                body: JSON.stringify({ query, intent_mode }),
             });
 
             if (!res.ok) {
