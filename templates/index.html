@@ -263,16 +263,19 @@
             }
 
             let snippetsHTML = '';
-            if (yr.summary_snippets && yr.summary_snippets.length > 0) {
-                snippetsHTML = '<ul class="mt-3 space-y-1.5">';
-                yr.summary_snippets.forEach(s => {
-                    snippetsHTML += `
-                    <li class="flex items-start space-x-2 text-xs text-slate-300">
-                        <span class="text-[10px] text-orange-500 mt-0.5 shrink-0">►</span>
-                        <span>${s}</span>
-                    </li>`;
-                });
-                snippetsHTML += '</ul>';
+            if (yr.summary_snippets) {
+                const snippets = Array.isArray(yr.summary_snippets) ? yr.summary_snippets : [yr.summary_snippets];
+                if (snippets.length > 0) {
+                    snippetsHTML = '<ul class="mt-3 space-y-1.5">';
+                    snippets.forEach(s => {
+                        snippetsHTML += `
+                        <li class="flex items-start space-x-2 text-xs text-slate-300">
+                            <span class="text-[10px] text-orange-500 mt-0.5 shrink-0">►</span>
+                            <span>${s}</span>
+                        </li>`;
+                    });
+                    snippetsHTML += '</ul>';
+                }
             }
 
             let linksHTML = '';
