@@ -36,7 +36,9 @@ ROUTING_CACHE = {
     "foot": ["biohackers", "painmanagement", "AskOldPeople"],
     "website": ["smallbusiness", "forhire", "startups"],
     "dev": ["smallbusiness", "forhire", "startups"],
-    "app": ["smallbusiness", "forhire", "startups"]
+    "app": ["smallbusiness", "forhire", "startups"],
+    "shirt": ["fashionreps", "streetwear", "malefashionadvice"],
+    "clothing": ["fashionreps", "streetwear", "malefashionadvice"]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -76,60 +78,74 @@ def _clean_json_response(content: str) -> dict:
         
     return json.loads(content)
 
+def _normalize_query_text(user_input: str) -> str:
+    """Strip out heavy conversational filler to extract core semantics."""
+    filler_re = re.compile(r'\b(find me people who|i want to|i make|looking for someone to|help me find)\b', re.IGNORECASE)
+    cleaned = filler_re.sub('', user_input.lower())
+    return " ".join(cleaned.split())
+
 def _translate_query(query: str, intent_mode: str) -> str:
-    """Translate natural language into structured Reddit search strings based on intent."""
-    # Tokenize words to create an inclusive OR query group
-    cleaned = re.sub(r'[^\w\s]', '', query)
+    """Translate natural language into structured Reddit search strings based on intent as an emergency fallback."""
+    normalized = _normalize_query_text(query)
+    cleaned = re.sub(r'[^\w\s]', '', normalized)
     tokens = [t.strip() for t in cleaned.split() if len(t.strip()) > 1]
     keyword_clause = " OR ".join(tokens) if tokens else query
         
-    if intent_mode == 'job_search':
-        return f'title:({keyword_clause}) AND (hire OR hiring OR "looking for") AND self:yes'
-    elif intent_mode == 'hiring_leads':
-        return f'title:({keyword_clause}) AND ("for hire" OR available OR portfolio) AND self:yes'
-    elif intent_mode == 'lead_generation':
-        # Use a cleaner, highly-compatible Reddit search syntax structure
-        # This ensures Reddit returns raw matches, preventing API ghost towns
-        return f"({keyword_clause}) self:yes"
-    elif intent_mode == 'product_discovery':
-        return f'title:({keyword_clause}) AND (review OR vs OR best OR alternative) AND self:yes'
+    if intent_mode == 'supply_side':
+        return f'title:({keyword_clause}) AND (need OR hiring OR project OR hire OR pain OR problem OR issue) AND self:yes'
+    elif intent_mode == 'demand_side':
+        return f'title:({keyword_clause}) AND ("for hire" OR available OR portfolio OR review OR vs OR best) AND self:yes'
     else:
-        return f'title:({keyword_clause}) AND self:yes'
+        return f"({keyword_clause}) self:yes"
+
+def _fallback_subreddits(query: str, intent_mode: str) -> list:
+    """Choose subreddits based on keywords or default values as a fallback routing layer."""
+    query_lower = query.lower()
+    for key, subs in ROUTING_CACHE.items():
+        if key in query_lower:
+            return subs
+            
+    if intent_mode == 'supply_side':
+        return ["smallbusiness", "forhire", "startups", "entrepreneur"]
+    else:
+        return ["ConsumerReports", "buyitforlife", "findareddit"]
+
+# PRE-COMPILED REGEX MATRICES FOR THE 3 CORE MODES
+RE_SUPPLY_CONCERNS = re.compile(r'(struggling|pain|numb|hurt|sore|problem|issue|ache|discomfort|neuropathy|fail|broken|stuck|error|fix|expensive|waste|unemployed|laid off|reject|ghosted)', re.IGNORECASE)
+RE_SUPPLY_DEMANDS = re.compile(r'(hire|hiring|budget|contract|need a|looking for a|paying|freelancer|agency|open role|position|salary|we are looking)', re.IGNORECASE)
+
+RE_DEMAND_CONCERNS = re.compile(r'(need to hire|looking to hire|hard to find|who can build|review|comparison|vs|worth it|anyone tried|thoughts on)', re.IGNORECASE)
+RE_DEMAND_DEMANDS = re.compile(r'(for hire|portfolio|available|my work|hire me|freelancer ready|best|alternative|recommendation|top rated|which one)', re.IGNORECASE)
+
+RE_GEN_CONCERNS = re.compile(r'(how to|advice|help|question|issue|problem)', re.IGNORECASE)
+RE_GEN_DEMANDS = re.compile(r'(recommend|best|looking for|where to find|any good)', re.IGNORECASE)
 
 class PatternScorer:
-    """Fast Python regex engine to bypass LLM counting overhead, tailored by intent."""
+    """Fast Python regex engine to bypass LLM counting overhead, tailored by simplified intent."""
     def __init__(self, intent_mode: str):
         self.intent_mode = intent_mode
         
-        if intent_mode == 'job_search':
-            self.concerns_re = re.compile(r'(struggling|unemployed|laid off|reject|ghosted|tough market)', re.IGNORECASE)
-            self.demands_re = re.compile(r'(hiring|open role|position|salary|we are looking|join our team)', re.IGNORECASE)
-        elif intent_mode == 'hiring_leads':
-            self.concerns_re = re.compile(r'(need to hire|looking to hire|hard to find|who can build)', re.IGNORECASE)
-            self.demands_re = re.compile(r'(for hire|portfolio|available|my work|hire me|freelancer ready)', re.IGNORECASE)
-        elif intent_mode == 'lead_generation':
-            self.concerns_re = re.compile(r'(pain|numb|hurt|sore|problem|issue|ache|discomfort|neuropathy|fail|broken|stuck|error|fix|expensive|waste)', re.IGNORECASE)
-            self.demands_re = re.compile(r'(looking for|recommend|suggest|buy|massager|hire|service|builder|developer|budget|agency|freelancer|cost|price|quotes|paying|looking for a)', re.IGNORECASE)
-        elif intent_mode == 'product_discovery':
-            self.concerns_re = re.compile(r'(review|comparison|vs|worth it|anyone tried|thoughts on)', re.IGNORECASE)
-            self.demands_re = re.compile(r'(best|alternative|recommendation|top rated|which one)', re.IGNORECASE)
+        if intent_mode == 'supply_side':
+            self.concerns_re = RE_SUPPLY_CONCERNS
+            self.demands_re = RE_SUPPLY_DEMANDS
+        elif intent_mode == 'demand_side':
+            self.concerns_re = RE_DEMAND_CONCERNS
+            self.demands_re = RE_DEMAND_DEMANDS
         else:
-            self.concerns_re = re.compile(r'(problem|issue)', re.IGNORECASE)
-            self.demands_re = re.compile(r'(buy|looking for)', re.IGNORECASE)
+            self.concerns_re = RE_GEN_CONCERNS
+            self.demands_re = RE_GEN_DEMANDS
 
     def score(self, text: str):
         c_matches = len(self.concerns_re.findall(text))
         d_matches = len(self.demands_re.findall(text))
         
-        # Negative scoring for competitors in lead_generation
-        if self.intent_mode == 'lead_generation':
-            competitor_re = re.compile(r'(\[for hire\]|my portfolio|i can build)', re.IGNORECASE)
-            if competitor_re.search(text):
-                return {"concerns": 0, "demands": 0, "intent_score": -1}
-                
-        intent_score = c_matches + d_matches
+        if self.intent_mode == 'general_search':
+            intent_score = max(1, c_matches + d_matches)
+        else:
+            intent_score = c_matches + d_matches
+            
         return {
-            "concerns": 1 if c_matches > 0 else 0, # count users, not total words
+            "concerns": 1 if c_matches > 0 else 0,
             "demands": 1 if d_matches > 0 else 0,
             "intent_score": intent_score
         }
@@ -149,7 +165,7 @@ async def read_index(request: Request):
 @app.post("/api/analyze")
 async def analyze(request: Request, payload: AnalyzeRequest):
     """
-    High-Performance Intent-Driven Endpoint.
+    High-Performance Dynamic LLM-driven Reddit OSINT Pipeline.
     """
     query = payload.query.strip()
     intent_mode = payload.intent_mode.strip()
@@ -162,7 +178,6 @@ async def analyze(request: Request, payload: AnalyzeRequest):
     now = datetime(2026, 5, 17, tzinfo=timezone.utc)
     cache_key = (query, intent_mode)
     
-    # ─── 1. Cache Check ───────────────────────────────────────────────────────
     cached = SEARCH_CACHE.get(cache_key)
     if cached:
         cached_time, cached_data = cached
@@ -170,56 +185,75 @@ async def analyze(request: Request, payload: AnalyzeRequest):
             return JSONResponse(content=cached_data)
 
     nvidia_api_key = os.getenv("NVIDIA_API_KEY", "MISSING_NVIDIA_API_KEY")
-    query_lower = query.lower()
 
-    # ─── 2. Smart Intent Router ───────────────────────────────────────────────
+    # ─── 1. Stage 1 LLM Query Optimizer & Subreddit Router ───────────────────
     target_subreddits = []
+    search_string = ""
     
-    for key, subs in ROUTING_CACHE.items():
-        if key in query_lower:
-            target_subreddits = subs
-            break
-            
-    if not target_subreddits:
-        if nvidia_api_key != "MISSING_NVIDIA_API_KEY":
-            stage_1_prompt = f"""Act as a Reddit Data Archeologist. Analyze the user's business intent: "{query}" with mode "{intent_mode}".
-Output a strict JSON structure containing:
-1. "target_subreddits": An array of exactly 3 specific, highly active subreddits where individuals experiencing this target problem congregate.
-CRITICAL RULE: NEVER return generic subreddits like r/all, r/AskReddit, r/Advice, r/pics, or any NSFW subreddits. If you cannot find specific niches, default to ["smallbusiness", "ConsumerReports", "entrepreneur"].
-Output ONLY valid JSON."""
-            payload_s1 = {
-                "model": "meta/llama-3-nemotron-70b-instruct",
-                "messages": [{"role": "system", "content": stage_1_prompt}],
-                "temperature": 0.1,
-                "max_tokens": 150
-            }
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp_s1 = await client.post(
-                        "https://integrate.api.nvidia.com/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {nvidia_api_key}", "Content-Type": "application/json"},
-                        json=payload_s1,
-                        timeout=15.0
-                    )
-                    resp_s1.raise_for_status()
-                    content_s1 = resp_s1.json()["choices"][0]["message"]["content"]
-                    parsed_s1 = _clean_json_response(content_s1)
-                    target_subreddits = parsed_s1.get("target_subreddits", ["smallbusiness", "ConsumerReports", "entrepreneur"])
-                    banned = ["all", "askreddit", "advice", "pics"]
-                    target_subreddits = [s for s in target_subreddits if s.lower() not in banned][:3]
-                    if not target_subreddits:
-                        target_subreddits = ["smallbusiness", "ConsumerReports", "entrepreneur"]
-            except Exception:
-                target_subreddits = ["smallbusiness", "ConsumerReports", "entrepreneur"]
-        else:
-            target_subreddits = ["smallbusiness", "ConsumerReports", "entrepreneur"]
+    if nvidia_api_key != "MISSING_NVIDIA_API_KEY":
+        stage_1_prompt = f"""You are a Reddit Search API Query Expert. Output a strict, raw JSON object ONLY: {{"reddit_query": "...", "target_subreddits": ["...", "...", "..."]}}. No conversational filler, no markdown wrappers.
 
-    search_string = _translate_query(query, intent_mode)
+CRITICAL QUERY SYNTAX RULES BASED ON INTENT_MODE:
+- If intent_mode == 'supply_side' (User wants to Find Jobs or Sell a Service/Product):
+  * They are hunting for BUYERS/EMPLOYERS.
+  * If targeting hiring hubs like r/forhire, r/jobbit, or r/freelance, you MUST append `HIRING` or `title:HIRING` to the search string. 
+  * You MUST explicitly add negation operators to strip out other sellers: `-title:"for hire" -title:"available"`.
+  * Example query for web developer: `q=title:HIRING web developer self:yes -title:"for hire"`
+
+- If intent_mode == 'demand_side' (User wants to Hire Talent or Discover Competitors/Products):
+  * They are hunting for SELLERS/PORTFOLIOS.
+  * You MUST append `title:"for hire"` or `title:available` to capture freelance offerings.
+  * Example query for web developer: `q=title:"for hire" web developer self:yes`
+
+- If intent_mode == 'general_search':
+  * Provide broad, organic synonym strings without strict transaction tags.
+
+Input query: "{query}"
+Input intent_mode: "{intent_mode}" """
+        
+        payload_s1 = {
+            "model": "meta/llama-3-nemotron-70b-instruct",
+            "messages": [{"role": "system", "content": stage_1_prompt}],
+            "temperature": 0.1,
+            "max_tokens": 150
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                resp_s1 = await client.post(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {nvidia_api_key}", "Content-Type": "application/json"},
+                    json=payload_s1,
+                    timeout=10.0
+                )
+                resp_s1.raise_for_status()
+                content_s1 = resp_s1.json()["choices"][0]["message"]["content"]
+                parsed_s1 = _clean_json_response(content_s1)
+                
+                search_string = parsed_s1.get("reddit_query", "")
+                target_subreddits = parsed_s1.get("target_subreddits", [])
+                
+                banned = ["pics", "askreddit", "advice", "all"]
+                target_subreddits = [s for s in target_subreddits if s.lower() not in banned][:3]
+                
+                if not search_string or not target_subreddits:
+                    raise ValueError("Empty LLM fields")
+        except Exception:
+            search_string = _translate_query(query, intent_mode)
+            target_subreddits = _fallback_subreddits(query, intent_mode)
+    else:
+        search_string = _translate_query(query, intent_mode)
+        target_subreddits = _fallback_subreddits(query, intent_mode)
+
+    # Clean up target subreddits
+    if not target_subreddits:
+        target_subreddits = ["ConsumerReports", "buyitforlife", "findareddit"]
+
     encoded_search = urllib.parse.quote(search_string)
 
-    # ─── 3. Parallel Multi-Scrape Fetching ────────────────────────────────────
+    # ─── 2. Parallel Multi-Scrape Fetching ────────────────────────────────────
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StealthOSINT/4.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StealthOSINT/5.0"
     }
     
     async def fetch_subreddit(subreddit: str):
@@ -239,7 +273,6 @@ Output ONLY valid JSON."""
     seen_ids = set()
     scorer = PatternScorer(intent_mode)
     
-    # Timeline buckets prep
     timeline_buckets = {
         "2026": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []},
         "2025": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []},
@@ -255,11 +288,14 @@ Output ONLY valid JSON."""
         for child in children:
             post = child.get("data", {})
             post_id = post.get("id")
-            if not post_id or post_id in seen_ids:
-                continue
-                
-            seen_ids.add(post_id)
             title = post.get("title", "")
+            
+            # Post-Fetch Safety Stripping for Supply Side (strip out freelancers)
+            if intent_mode == 'supply_side':
+                if "for hire" in title.lower():
+                    continue
+                    
+            seen_ids.add(post_id)
             selftext = post.get("selftext", "")
             subreddit = post.get("subreddit_name_prefixed", "")
             created_utc = post.get("created_utc", 0)
@@ -276,7 +312,6 @@ Output ONLY valid JSON."""
             full_text = f"{title} {selftext}"
             score_data = scorer.score(full_text)
             
-            # Local scoring applied to buckets
             timeline_buckets[year]["concerns"] += score_data["concerns"]
             timeline_buckets[year]["demand"] += score_data["demands"]
 
@@ -288,7 +323,6 @@ Output ONLY valid JSON."""
                     "year": post_time.year
                 })
 
-            # Check if it's a live lead
             if post_time >= cutoff_30_days and score_data["intent_score"] > 0:
                 snippet = selftext[:200] + "..." if selftext else title
                 lead_feed.append({
@@ -307,10 +341,9 @@ Output ONLY valid JSON."""
                 "year": year
             })
 
-    # Sort lead feed newest to oldest
     lead_feed.sort(key=lambda x: x["created_utc"], reverse=True)
 
-    # ─── 4. Stage 3 LLM (Only qualitative summaries) ──────────────────────────
+    # ─── 3. Stage 3 LLM (Only qualitative summaries) ──────────────────────────
     if nvidia_api_key != "MISSING_NVIDIA_API_KEY" and raw_posts:
         subset = raw_posts[:50]
         stage_3_prompt = f"""Analyze this Reddit dataset for the query: "{query}" and intent: "{intent_mode}".
@@ -323,7 +356,7 @@ Return a strictly minified JSON structure containing:
     "Older": {{"summary_snippets": []}}
   }}
 }}
-Write concise, bulleted semantic syntheses explaining exact shifting consumer patterns for each year. Max 2 items per year. Output ONLY valid JSON."""
+Write concise, bulleted semantic syntheses explaining shifts for each year. Max 2 items per year. Output ONLY valid JSON."""
 
         payload_s3 = {
             "model": "meta/llama-3-nemotron-70b-instruct",
@@ -352,7 +385,7 @@ Write concise, bulleted semantic syntheses explaining exact shifting consumer pa
         except Exception:
             pass 
 
-    # ─── 5. Final Output & Cache Store ────────────────────────────────────────
+    # ─── 4. Final Output & Cache Store ────────────────────────────────────────
     timeline_output = []
     labels = {
         "2026": ("Current Year", "emerald"),
