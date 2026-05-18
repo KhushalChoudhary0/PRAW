@@ -206,7 +206,10 @@ CRITICAL QUERY SYNTAX RULES BASED ON INTENT_MODE:
   * Example query for web developer: `q=title:"for hire" web developer self:yes`
 
 - If intent_mode == 'general_search':
-  * Provide broad, organic synonym strings without strict transaction tags.
+  * They are seeking organic community discussions and in-depth user experiences.
+  * You MUST build a broad, multi-keyword boolean query mapping the core topic + highly related lifestyle symptoms or contextual words.
+  * For example, if user searches "joint pain", the query must look like: `q=(joint OR joints OR knee OR knees) AND (pain OR ache OR stiffness OR thritis) self:yes`
+  * For example, if user searches "babysitter", the query must look like: `q=(babysitter OR babysitting OR nanny OR childcare) self:yes`
 
 Input query: "{query}"
 Input intent_mode: "{intent_mode}" """
@@ -246,18 +249,27 @@ Input intent_mode: "{intent_mode}" """
         target_subreddits = _fallback_subreddits(query, intent_mode)
 
     # Clean up target subreddits
-    if not target_subreddits:
+    if intent_mode == 'general_search':
+        target_subreddits = ["all"]
+    elif not target_subreddits:
         target_subreddits = ["ConsumerReports", "buyitforlife", "findareddit"]
 
     encoded_search = urllib.parse.quote(search_string)
 
+    t_param = "all" if intent_mode == 'general_search' else "month"
+    sort_param = "relevance" if intent_mode == 'general_search' else "new"
+    limit_param = 80 if intent_mode == 'general_search' else 40
+
     # ─── 2. Parallel Multi-Scrape Fetching ────────────────────────────────────
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StealthOSINT/5.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36 StealthOSINT/5.0"
     }
     
     async def fetch_subreddit(subreddit: str):
-        url = f"https://www.reddit.com/r/{subreddit}/search.json?q={encoded_search}&restrict_sr=1&limit=40&sort=new"
+        if subreddit == "all":
+            url = f"https://www.reddit.com/search.json?q={encoded_search}&limit={limit_param}&sort={sort_param}&t={t_param}"
+        else:
+            url = f"https://www.reddit.com/r/{subreddit}/search.json?q={encoded_search}&restrict_sr=1&limit={limit_param}&sort={sort_param}&t={t_param}"
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers=headers, timeout=10.0)
@@ -268,7 +280,7 @@ Input intent_mode: "{intent_mode}" """
 
     results = await asyncio.gather(*(fetch_subreddit(sub) for sub in target_subreddits))
     
-    cutoff_30_days = now - timedelta(days=30)
+    cutoff_limit = now - timedelta(days=365) if intent_mode == 'general_search' else now - timedelta(days=30)
     raw_posts = []
     seen_ids = set()
     scorer = PatternScorer(intent_mode)
@@ -291,10 +303,35 @@ Input intent_mode: "{intent_mode}" """
             title = post.get("title", "")
             
             # Post-Fetch Safety Stripping for Supply Side (strip out freelancers)
+            # Post-Fetch Safety Stripping for Supply Side (strip out freelancers)
             if intent_mode == 'supply_side':
                 if "for hire" in title.lower():
                     continue
                     
+            # Post-Fetch Semantic Validation for General Search (exclude mechanical false positives & mismatch noise)
+            if intent_mode == 'general_search':
+                selftext = post.get("selftext", "")
+                full_text_lower = f"{title} {selftext}".lower()
+                
+                # Check for mechanical stop-words on physical/health queries
+                query_lower = query.lower()
+                pain_keywords = ["pain", "joint", "sore", "ache", "neuropathy", "stiffness", "injury", "knees", "backache", "arthritis", "disease", "illness", "condition", "symptom", "balm"]
+                if any(k in query_lower for k in pain_keywords):
+                    stop_words = ['chair', 'headphone', 'trimmer', 'razor', 'shaver', 'mechanical']
+                    if any(w in full_text_lower for w in stop_words):
+                        continue
+                
+                # Semantic Title Filter Guardrail: Title/Body must contain at least one token from the user's original query or direct synonyms
+                query_tokens = [t.lower() for t in _normalize_query_text(query).split() if len(t) > 2]
+                if query_tokens:
+                    if "pain" in query_tokens or "joint" in query_tokens:
+                        query_tokens.extend(["knee", "knees", "stiffness", "ache", "sore", "thritis", "joints"])
+                    elif "babysitter" in query_tokens or "nanny" in query_tokens:
+                        query_tokens.extend(["babysitting", "childcare"])
+                    
+                    if not any(token in full_text_lower for token in query_tokens):
+                        continue
+                        
             seen_ids.add(post_id)
             selftext = post.get("selftext", "")
             subreddit = post.get("subreddit_name_prefixed", "")
@@ -323,7 +360,7 @@ Input intent_mode: "{intent_mode}" """
                     "year": post_time.year
                 })
 
-            if post_time >= cutoff_30_days and score_data["intent_score"] > 0:
+            if post_time >= cutoff_limit and score_data["intent_score"] > 0:
                 snippet = selftext[:200] + "..." if selftext else title
                 lead_feed.append({
                     "title": title[:80] + ("..." if len(title) > 80 else ""),
@@ -384,6 +421,8 @@ Write concise, bulleted semantic syntheses explaining shifts for each year. Max 
                             timeline_buckets[yr]["summary_snippets"] = llm_timeline[yr].get("summary_snippets", [])
         except Exception:
             pass 
+
+
 
     # ─── 4. Final Output & Cache Store ────────────────────────────────────────
     timeline_output = []

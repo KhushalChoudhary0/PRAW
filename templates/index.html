@@ -108,22 +108,31 @@
                     </button>
                 </div>
                 
-                <div class="mt-5 border border-slate-700/50 rounded-xl p-1 bg-slate-900/40 flex flex-wrap text-[11px] sm:text-xs">
-                    <label class="cursor-pointer flex-1 text-center min-w-[120px]">
-                        <input type="radio" name="intent_mode" value="supply_side" class="peer sr-only" checked />
-                        <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Find Jobs / Sell Product / Service</div>
-                    </label>
-                    <label class="cursor-pointer flex-1 text-center min-w-[120px]">
-                        <input type="radio" name="intent_mode" value="demand_side" class="peer sr-only" />
-                        <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Hire Talent / Discover Products</div>
-                    </label>
-                    <label class="cursor-pointer flex-1 text-center min-w-[120px]">
-                        <input type="radio" name="intent_mode" value="general_search" class="peer sr-only" />
-                        <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">General Search</div>
-                    </label>
+                <div class="mt-5 flex flex-col w-full">
+                    <h3 class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2.5 text-center">Choose the niche you want to search</h3>
+                    <div class="border border-slate-700/50 rounded-xl p-1 bg-slate-900/40 flex flex-wrap text-[11px] sm:text-xs w-full">
+                        <label class="cursor-pointer flex-1 text-center min-w-[100px]">
+                            <input type="radio" name="intent_mode" value="supply_side" class="peer sr-only" checked />
+                            <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Find Jobs</div>
+                        </label>
+                        <label class="cursor-pointer flex-1 text-center min-w-[100px]">
+                            <input type="radio" name="intent_mode" value="demand_side" class="peer sr-only" />
+                            <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">Hire Talent</div>
+                        </label>
+                        <label class="cursor-pointer flex-1 text-center min-w-[100px] group relative">
+                            <input type="radio" name="intent_mode" value="general_search" class="peer sr-only" />
+                            <div class="px-2 py-2 rounded-lg text-slate-400 hover:text-slate-200 peer-checked:bg-slate-700 peer-checked:text-white transition-all font-medium">General Search</div>
+                            
+                            <!-- Premium Hover Tooltip -->
+                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-2 bg-slate-950 border border-slate-800 text-[10px] text-slate-300 rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-200 z-30 leading-normal text-center">
+                                Recommended for service exploration and in-depth product research.
+                            </div>
+                        </label>
+                    </div>
+                    <p id="intentHint" class="text-[11px] text-slate-500 mt-2.5 text-center transition-all italic">Targeting job offerings, hiring managers, and active work budgets.</p>
                 </div>
                 
-                <p class="text-[11px] text-slate-500 mt-4 text-center">Try: <button onclick="fillExample('I make websites for weddings')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">I make websites for weddings</button> · <button onclick="fillExample('Foot massager for older women')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">Foot massager for older women</button></p>
+                <p class="text-[11px] text-slate-500 mt-3 text-center">Try: <button onclick="fillExample('I make websites for weddings')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">I make websites for weddings</button> · <button onclick="fillExample('Foot massager for older women')" class="text-slate-400 hover:text-redditBrand underline underline-offset-2 transition">Foot massager for older women</button></p>
             </div>
 
             <!-- ─── LOADING STATE ─── -->
@@ -357,7 +366,7 @@
         </div>`;
     }
 
-    /* Allow Enter key to trigger analysis */
+    /* Allow Enter key to trigger analysis and handle radio hint changes */
     document.addEventListener('DOMContentLoaded', () => {
         const input = document.getElementById('queryInput');
         if (input) {
@@ -365,6 +374,22 @@
                 if (e.key === 'Enter') runAnalysis();
             });
         }
+
+        // Descriptive helper hints
+        document.querySelectorAll('input[name="intent_mode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const hint = document.getElementById('intentHint');
+                if (!hint) return;
+                
+                if (e.target.value === 'supply_side') {
+                    hint.textContent = 'Targeting job offerings, hiring managers, and active work budgets.';
+                } else if (e.target.value === 'demand_side') {
+                    hint.textContent = 'Targeting active service providers, portfolios, and contractor offerings.';
+                } else if (e.target.value === 'general_search') {
+                    hint.textContent = 'Recommended for service exploration and in-depth product research.';
+                }
+            });
+        });
     });
     </script>
 
