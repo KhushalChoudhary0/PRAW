@@ -1,3 +1,5 @@
+import os
+import json
 import asyncio
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request, HTTPException
@@ -5,6 +7,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import httpx
+from dotenv import load_dotenv
+
+# Load environment variables from .env if present
+load_dotenv()
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
 app = FastAPI(title="Stealth Reddit OSINT Microservice")
@@ -67,8 +73,8 @@ async def analyze(request: Request, payload: AnalyzeRequest):
 
     keywords = _clean_keywords(query)
     
-    # Reddit search API URL
-    url = f"https://www.reddit.com/search.json?q={keywords}&limit=100&sort=new"
+    # Reddit search API URL (Limit 50)
+    url = f"https://www.reddit.com/search.json?q={keywords}&limit=50&sort=new"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StealthOSINT/1.0"
     }
@@ -85,29 +91,17 @@ async def analyze(request: Request, payload: AnalyzeRequest):
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": "Unable to fetch live data from Reddit right now. Please try again in a moment."})
 
-    # Prepare datasets
     now = datetime(2026, 5, 17, tzinfo=timezone.utc) # Fixed date reference for this sandbox environment
     cutoff_30_days = now - timedelta(days=30)
     
-    lead_feed = []
-    
-    timeline_buckets = {
-        "2026": {"concerns": 0, "demand": 0, "links": []},
-        "2025": {"concerns": 0, "demand": 0, "links": []},
-        "2024": {"concerns": 0, "demand": 0, "links": []},
-        "Older": {"concerns": 0, "demand": 0, "links": []}
-    }
-    
-    # Keyword sets for pattern matching
-    concern_words = {"pain", "numb", "problem", "issue", "hurt", "bother"}
-    demand_words = {"looking for", "recommend", "massager", "buy", "hire", "service", "solution"}
-
     children = data.get("data", {}).get("children", [])
     
-    for child in children:
+    # Pre-process raw posts for mapping
+    raw_posts = []
+    llm_payload_posts = []
+    
+    for idx, child in enumerate(children):
         post = child.get("data", {})
-        
-        # Extract fields
         title = post.get("title", "")
         selftext = post.get("selftext", "")
         subreddit = post.get("subreddit_name_prefixed", "")
@@ -115,45 +109,152 @@ async def analyze(request: Request, payload: AnalyzeRequest):
         permalink = post.get("permalink", "")
         author = post.get("author", "[deleted]")
         
-        full_text = f"{title} {selftext}".lower()
-        absolute_url = f"https://www.reddit.com{permalink}"
         post_time = datetime.fromtimestamp(created_utc, tz=timezone.utc)
+        absolute_url = f"https://www.reddit.com{permalink}"
         
-        # 1. Lead Feed logic
-        if post_time >= cutoff_30_days:
-            snippet = selftext[:200] + "..." if selftext else title
-            lead_feed.append({
-                "title": title[:80] + ("..." if len(title) > 80 else ""),
-                "snippet": snippet,
-                "subreddit": subreddit,
-                "author": f"u/{author}",
-                "url": absolute_url,
-                "created_utc": post_time.isoformat(),
-                "relative_time": _relative_time(post_time, now)
-            })
-            
-        # 2. Timeline logic
         year = str(post_time.year)
         if year not in ["2026", "2025", "2024"]:
             year = "Older"
-            
-        # Lightweight pattern matching
-        has_concern = any(word in full_text for word in concern_words)
-        has_demand = any(word in full_text for word in demand_words)
+
+        raw_posts.append({
+            "idx": idx,
+            "title": title,
+            "selftext": selftext,
+            "subreddit": subreddit,
+            "absolute_url": absolute_url,
+            "author": author,
+            "post_time": post_time,
+            "year": year
+        })
         
-        if has_concern:
-            timeline_buckets[year]["concerns"] += 1
-        if has_demand:
-            timeline_buckets[year]["demand"] += 1
-            
-        # Store top 3 links per year block
-        if len(timeline_buckets[year]["links"]) < 3:
-            timeline_buckets[year]["links"].append({
-                "title": f"[{post_time.year}] {title[:60]}...",
-                "subreddit": subreddit,
-                "url": absolute_url,
-                "year": post_time.year
+        llm_payload_posts.append({
+            "index": idx,
+            "title": title,
+            "text": selftext[:500], # Limit text payload to conserve tokens
+            "year": year
+        })
+
+    # Prepare default timeline structure
+    timeline_buckets = {
+        "2026": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []},
+        "2025": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []},
+        "2024": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []},
+        "Older": {"concerns": 0, "demand": 0, "links": [], "summary_snippets": []}
+    }
+
+    lead_feed = []
+    
+    # Store top 3 links for ALL blocks regardless of method
+    for post in raw_posts:
+        yr = post["year"]
+        if len(timeline_buckets[yr]["links"]) < 3:
+            timeline_buckets[yr]["links"].append({
+                "title": f"[{post['post_time'].year}] {post['title'][:60]}...",
+                "subreddit": post["subreddit"],
+                "url": post["absolute_url"],
+                "year": post["post_time"].year
             })
+
+    nvidia_api_key = os.getenv("NVIDIA_API_KEY", "MISSING_NVIDIA_API_KEY")
+    use_fallback = False
+    
+    if nvidia_api_key == "MISSING_NVIDIA_API_KEY" or not children:
+        use_fallback = True
+    else:
+        # LLM CALL
+        system_prompt = f"""You are a strict Market Intelligence & Intent Extraction system. 
+Analyze the provided batch of Reddit posts against the user's query context: "{query}".
+Return a strictly minified JSON structure containing:
+1. "live_leads": An array of integer "index" values identifying posts created within the past 30 days that show actual purchase intent, hiring intent, or an immediate addressable business problem. Filter out unrelated conversational gossip or spam.
+2. "timeline": A dictionary with keys strictly "2026", "2025", "2024", and "Older". For each year, estimate the approximate macro market size using your pre-trained knowledge and extrapolate realistic historical and current macroeconomic numbers based on the trend in the sample data. Do not just count the sample size.
+   - "concerns_count": Integer, estimated approximate macro total number of users venting about a relevant pain point, discomfort, or operational problem for that year (e.g. 2999 for 2026, 2000 for 2025).
+   - "demands_count": Integer, estimated approximate macro total number of users explicitly asking for a product recommendation, service, or tool for that year.
+   - "summary_snippets": An array of strings. Concise, bulleted semantic synthesis of exactly what the core consumer complaints or trends looked like during that specific year. Make it maximum 2 items per year.
+
+Output only valid JSON without markdown wrapping or extra conversational text."""
+
+        llm_payload = {
+            "model": "meta/llama-3-nemotron-70b-instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(llm_payload_posts)}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1500
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                llm_resp = await client.post(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {nvidia_api_key}", "Content-Type": "application/json"},
+                    json=llm_payload,
+                    timeout=25.0
+                )
+                llm_resp.raise_for_status()
+                llm_data = llm_resp.json()
+                
+                content = llm_data["choices"][0]["message"]["content"].strip()
+                if content.startswith("```json"):
+                    content = content[7:-3].strip()
+                elif content.startswith("```"):
+                    content = content[3:-3].strip()
+                    
+                parsed = json.loads(content)
+                
+                llm_leads = set(parsed.get("live_leads", []))
+                
+                # Apply LLM Leads mapped to actual posts
+                for post in raw_posts:
+                    if post["idx"] in llm_leads and post["post_time"] >= cutoff_30_days:
+                        snippet = post["selftext"][:200] + "..." if post["selftext"] else post["title"]
+                        lead_feed.append({
+                            "title": post["title"][:80] + ("..." if len(post["title"]) > 80 else ""),
+                            "snippet": snippet,
+                            "subreddit": post["subreddit"],
+                            "author": f"u/{post['author']}",
+                            "url": post["absolute_url"],
+                            "created_utc": post["post_time"].isoformat(),
+                            "relative_time": _relative_time(post["post_time"], now)
+                        })
+                
+                # Apply LLM Timeline
+                llm_timeline = parsed.get("timeline", {})
+                for yr in ["2026", "2025", "2024", "Older"]:
+                    if yr in llm_timeline:
+                        timeline_buckets[yr]["concerns"] = llm_timeline[yr].get("concerns_count", 0)
+                        timeline_buckets[yr]["demand"] = llm_timeline[yr].get("demands_count", 0)
+                        timeline_buckets[yr]["summary_snippets"] = llm_timeline[yr].get("summary_snippets", [])
+                        
+        except Exception as e:
+            # Fallback on LLM failure
+            use_fallback = True
+
+    if use_fallback:
+        # Native Keyword matching
+        concern_words = {"pain", "numb", "problem", "issue", "hurt", "bother"}
+        demand_words = {"looking for", "recommend", "massager", "buy", "hire", "service", "solution"}
+        
+        for post in raw_posts:
+            full_text = f"{post['title']} {post['selftext']}".lower()
+            
+            if post["post_time"] >= cutoff_30_days:
+                snippet = post["selftext"][:200] + "..." if post["selftext"] else post["title"]
+                lead_feed.append({
+                    "title": post["title"][:80] + ("..." if len(post["title"]) > 80 else ""),
+                    "snippet": snippet,
+                    "subreddit": post["subreddit"],
+                    "author": f"u/{post['author']}",
+                    "url": post["absolute_url"],
+                    "created_utc": post["post_time"].isoformat(),
+                    "relative_time": _relative_time(post["post_time"], now)
+                })
+                
+            yr = post["year"]
+            if any(word in full_text for word in concern_words):
+                timeline_buckets[yr]["concerns"] += 1
+            if any(word in full_text for word in demand_words):
+                timeline_buckets[yr]["demand"] += 1
 
     # Sort lead feed newest to oldest
     lead_feed.sort(key=lambda x: x["created_utc"], reverse=True)
@@ -177,6 +278,7 @@ async def analyze(request: Request, payload: AnalyzeRequest):
                 {"label": "Concerns / Complaints", "value": bucket["concerns"]},
                 {"label": "Product / Service Demand", "value": bucket["demand"]}
             ],
+            "summary_snippets": bucket["summary_snippets"],
             "historical_threads": bucket["links"]
         })
 

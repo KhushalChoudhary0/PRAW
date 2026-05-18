@@ -1,0 +1,38 @@
+# Improving Search Relevance & Market Timeline Data
+
+The current output is returning irrelevant matches (like "message" instead of "massage") and failing to populate older years (2025, 2024) because the Reddit search defaults to fetching only the 50 *newest* posts. 
+
+To fix this and provide the highly professional, systematized output you requested while keeping server costs minimal, I propose the following architectural adjustments:
+
+## Proposed Changes
+
+### 1. Dual-Pronged Reddit Fetch (Concurrent & Lightweight)
+To populate both the "Live Leads" and the "Historical Timeline" without pulling thousands of posts, we will make two simultaneous, fast API calls to Reddit:
+- **Request A:** `sort=new&limit=30` (Guarantees we get the freshest posts from the last 30 days for our Live Lead feed).
+- **Request B:** `sort=relevance&t=all&limit=40` (Pulls the most historically relevant posts of all time to populate 2025, 2024, and Older buckets).
+We will merge these results (max 70 posts) and send them as a single token-optimized block to the NVIDIA LLM.
+
+### 2. Strict LLM Filtering
+To fix the "message" vs "massage" issue, we will update the LLM's system prompt to act as a strict gatekeeper. It will explicitly discard any post that is a false-positive typo or irrelevant to the core product/service intent, ensuring only high-quality data is analyzed.
+
+### 3. Professional Timeline Breakdown Format
+We will modify the JSON structure requested from the LLM. Instead of a simple array of `summary_snippets`, we will enforce a strict `detailed_breakdown` schema for each year. 
+
+**Example format the LLM will follow:**
+- `2026`: "Detailed breakdown: X numbness concerns, Y demanding solutions, Z asking for specific products."
+- `2025`: "X complaints raised, growing demand for home-care tools."
+- `Older`: "Baseline metric showing early-stage market interest..."
+
+## Open Questions for You
+
+> [!IMPORTANT]  
+> **Regarding the numbers in your example (e.g., "2,999 numbness concerns"):**  
+> Because we are keeping this microservice highly efficient and zero-bloat, we are only scraping a sample of ~70 posts per query. Therefore, the *actual* counts found in the live data will be much smaller (e.g., "12 numbness concerns, 5 demanding solutions"). 
+> 
+> **Question:** Do you want the LLM to report the *exact, factual numbers* from our scraped 70-post sample, OR do you want the LLM to use the sample to *extrapolate and estimate* the broader macro market size (generating larger, estimated numbers like 2,000+)?
+
+## Verification Plan
+1. Update `main.py` to handle the concurrent `httpx` requests.
+2. Rewrite the LLM prompt to strictly format the output into a professional summary string.
+3. Update `index.html` to display this new professional breakdown natively under each year card.
+4. Run a test with "Foot massage for older women" to verify "message" is filtered out and historical years are populated.
