@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stealth OSINT Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -347,6 +348,17 @@
             </div>`;
         });
 
+        let chartHTML = '';
+        if (json.intent_mode === 'general_search') {
+            chartHTML = `
+            <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-5 mb-6">
+                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 text-center">Historical Demand / Solutions Trend</h4>
+                <div class="h-[180px] w-full relative">
+                    <canvas id="demandChart"></canvas>
+                </div>
+            </div>`;
+        }
+
         const timelineColumn = `
         <div class="space-y-4">
             <div class="flex items-center space-x-3 mb-4">
@@ -354,6 +366,7 @@
                 <span class="text-xs font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Market Trend Timeline</span>
                 <div class="h-px w-8 bg-slate-800"></div>
             </div>
+            ${chartHTML}
             <div class="relative mt-2">
                 ${timelineHTML}
             </div>
@@ -364,6 +377,58 @@
             ${leadsColumn}
             ${timelineColumn}
         </div>`;
+
+        if (json.intent_mode === 'general_search') {
+            setTimeout(() => {
+                const canvas = document.getElementById('demandChart');
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                
+                const chronological = [...timeline].reverse();
+                const labels = chronological.map(yr => yr.year);
+                const demandData = chronological.map(yr => {
+                    const metric = yr.metrics.find(m => m.label === "Demand / Solutions");
+                    return metric ? metric.value : 0;
+                });
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Demand Volume',
+                            data: demandData,
+                            borderColor: '#ff4500',
+                            backgroundColor: 'rgba(255, 69, 0, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            pointBackgroundColor: '#ff4500',
+                            pointBorderColor: '#fff',
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#94a3b8', font: { size: 10 } }
+                            },
+                            y: {
+                                grid: { color: '#1e293b' },
+                                ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 },
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }, 100);
+        }
     }
 
     /* Allow Enter key to trigger analysis and handle radio hint changes */

@@ -250,7 +250,10 @@ Input intent_mode: "{intent_mode}" """
 
     # Clean up target subreddits
     if intent_mode == 'general_search':
-        target_subreddits = ["all"]
+        if not target_subreddits or target_subreddits == ["all"]:
+            target_subreddits = ["all"] + _fallback_subreddits(query, intent_mode)[:3]
+        else:
+            target_subreddits = ["all"] + [s for s in target_subreddits if s.lower() != "all"][:3]
     elif not target_subreddits:
         target_subreddits = ["ConsumerReports", "buyitforlife", "findareddit"]
 
@@ -258,7 +261,7 @@ Input intent_mode: "{intent_mode}" """
 
     t_param = "all" if intent_mode == 'general_search' else "month"
     sort_param = "relevance" if intent_mode == 'general_search' else "new"
-    limit_param = 80 if intent_mode == 'general_search' else 40
+    limit_param = 100 if intent_mode == 'general_search' else 40
 
     # ─── 2. Parallel Multi-Scrape Fetching ────────────────────────────────────
     headers = {
@@ -300,6 +303,8 @@ Input intent_mode: "{intent_mode}" """
         for child in children:
             post = child.get("data", {})
             post_id = post.get("id")
+            if post_id in seen_ids:
+                continue
             title = post.get("title", "")
             
             # Post-Fetch Safety Stripping for Supply Side (strip out freelancers)
@@ -317,20 +322,28 @@ Input intent_mode: "{intent_mode}" """
                 query_lower = query.lower()
                 pain_keywords = ["pain", "joint", "sore", "ache", "neuropathy", "stiffness", "injury", "knees", "backache", "arthritis", "disease", "illness", "condition", "symptom", "balm"]
                 if any(k in query_lower for k in pain_keywords):
-                    stop_words = ['chair', 'headphone', 'trimmer', 'razor', 'shaver', 'mechanical']
+                    stop_words = ['chair', 'headphone', 'trimmer', 'razor', 'shaver', 'mechanical', 'bank', 'tariff', 'tariffs', 'session', 'jointly', 'parliament', 'committee', 'ex-wife', 'ex-husband', 'account', 'split']
                     if any(w in full_text_lower for w in stop_words):
                         continue
                 
-                # Semantic Title Filter Guardrail: Title/Body must contain at least one token from the user's original query or direct synonyms
+                # Semantic Title Filter Guardrail: Body parts + Pain symptoms check
                 query_tokens = [t.lower() for t in _normalize_query_text(query).split() if len(t) > 2]
                 if query_tokens:
                     if "pain" in query_tokens or "joint" in query_tokens:
-                        query_tokens.extend(["knee", "knees", "stiffness", "ache", "sore", "thritis", "joints"])
+                        body_parts = ["joint", "joints", "knee", "knees", "back", "hip", "hips", "shoulder", "shoulders", "neck", "elbow", "elbows", "muscle", "muscles", "wrist", "wrists", "finger", "fingers", "hand", "hands", "foot", "feet", "body", "physical", "bones", "abdominal", "pelvic", "chest", "chronic"]
+                        symptom_descriptors = ["pain", "ache", "aches", "stiffness", "sore", "thritis", "arthritis", "hurt", "swelling", "inflammation", "aching", "stiff", "injury", "injuries", "disease", "illness", "condition", "symptom", "symptoms", "neuropathy", "balm"]
+                        
+                        has_body = any(b in full_text_lower for b in body_parts)
+                        has_symptom = any(s in full_text_lower for s in symptom_descriptors)
+                        if not (has_body and has_symptom):
+                            continue
                     elif "babysitter" in query_tokens or "nanny" in query_tokens:
-                        query_tokens.extend(["babysitting", "childcare"])
-                    
-                    if not any(token in full_text_lower for token in query_tokens):
-                        continue
+                        query_tokens.extend(["babysitting", "childcare", "sitter", "kids", "care"])
+                        if not any(token in full_text_lower for token in query_tokens):
+                            continue
+                    else:
+                        if not any(token in full_text_lower for token in query_tokens):
+                            continue
                         
             seen_ids.add(post_id)
             selftext = post.get("selftext", "")
