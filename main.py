@@ -209,14 +209,16 @@ CRITICAL QUERY SYNTAX RULES BASED ON INTENT_MODE:
   * They are seeking organic community discussions and in-depth user experiences.
   * You MUST build a broad, multi-keyword boolean query mapping the core topic + highly related lifestyle symptoms or contextual words.
   * For example, if user searches "joint pain", the query must look like: `q=(joint OR joints OR knee OR knees) AND (pain OR ache OR stiffness OR thritis) self:yes`
-  * For example, if user searches "babysitter", the query must look like: `q=(babysitter OR babysitting OR nanny OR childcare) self:yes`
-
-Input query: "{query}"
-Input intent_mode: "{intent_mode}" """
+  * For example, if user searches "babysitter", the query must look like: `q=(babysitter OR babysitting OR nanny OR childcare) self:yes`"""
+        
+        user_message_s1 = json.dumps({"query": query, "intent_mode": intent_mode})
         
         payload_s1 = {
             "model": "meta/llama-3-nemotron-70b-instruct",
-            "messages": [{"role": "system", "content": stage_1_prompt}],
+            "messages": [
+                {"role": "system", "content": stage_1_prompt},
+                {"role": "user", "content": user_message_s1}
+            ],
             "temperature": 0.1,
             "max_tokens": 150
         }
@@ -396,7 +398,7 @@ Input intent_mode: "{intent_mode}" """
     # ─── 3. Stage 3 LLM (Only qualitative summaries) ──────────────────────────
     if nvidia_api_key != "MISSING_NVIDIA_API_KEY" and raw_posts:
         subset = raw_posts[:50]
-        stage_3_prompt = f"""Analyze this Reddit dataset for the query: "{query}" and intent: "{intent_mode}".
+        stage_3_prompt = """Analyze this Reddit dataset for the provided query and intent.
 Return a strictly minified JSON structure containing:
 {{
   "timeline": {{
@@ -408,11 +410,17 @@ Return a strictly minified JSON structure containing:
 }}
 Write concise, bulleted semantic syntheses explaining shifts for each year. Max 2 items per year. Output ONLY valid JSON."""
 
+        user_message_s3 = json.dumps({
+            "query": query,
+            "intent_mode": intent_mode,
+            "dataset": subset
+        })
+
         payload_s3 = {
             "model": "meta/llama-3-nemotron-70b-instruct",
             "messages": [
                 {"role": "system", "content": stage_3_prompt},
-                {"role": "user", "content": json.dumps(subset)}
+                {"role": "user", "content": user_message_s3}
             ],
             "temperature": 0.2,
             "max_tokens": 1000
